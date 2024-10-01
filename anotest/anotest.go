@@ -281,16 +281,12 @@ func (a *AnotateTest) stopCode(capture bool, comment ...string) {
 
 	fmt.Fprintf(a.f, "### %s\n(%s) %s\n\n```go\n", a.codeName, link, text)
 
-	fmt.Fprintf(os.Stderr, "File: %s\n", fName)
-
 	code, err := os.ReadFile(a.codeFile)
 	if err != nil {
 		panic(err)
 	}
 
 	codeLines := strings.Split(string(code), "\n")
-
-	fmt.Fprintf(os.Stderr, "start: %d, stop: %d\n", a.codeStart, codeStop)
 
 	codeLines = codeLines[a.codeStart : codeStop-1]
 
@@ -303,8 +299,6 @@ func (a *AnotateTest) stopCode(capture bool, comment ...string) {
 
 	minSpace := maxLine
 	spaceLen := 0
-
-	fmt.Fprintf(os.Stderr, "\nminSpace: %d\n", minSpace)
 
 	skip := make(map[int]struct{}, len(codeLines))
 
@@ -321,17 +315,11 @@ func (a *AnotateTest) stopCode(capture bool, comment ...string) {
 		}
 
 		spaceLen = l - lNew
-		fmt.Fprintf(os.Stderr, "space len: %d == (%d - %d = %d)\n", spaceLen, l, lNew, l-lNew)
-
 		if spaceLen < minSpace {
-			fmt.Fprintf(os.Stderr, "spaceL: %d minSpace: %d\n", spaceLen, minSpace)
 			minSpace = spaceLen
 		}
 
-		fmt.Fprintf(os.Stderr, "line: '%s' lnew: '%s' l: %d lNew: %d space: %d minSpace: %d\n", line, lineNew, l, lNew, spaceLen, minSpace)
 	}
-
-	fmt.Fprintf(os.Stderr, "min space: %d\n", minSpace)
 
 	for i := range codeLines {
 		if _, ok := skip[i]; ok {
@@ -351,12 +339,8 @@ func (a *AnotateTest) stopCode(capture bool, comment ...string) {
 		fmt.Fprintf(a.f, "stdout:\n\n```text\n")
 
 		for i := 0; i < 2; i++ {
-			fmt.Fprintf(os.Stderr, "checking new lines\n")
-
 			select {
 			case line := <-a.codeCaptureChan:
-				fmt.Fprintf(os.Stderr, "New line ? '%s'\n", line)
-
 				fmt.Fprintf(a.f, "%s\n```\n\n", line)
 			case <-time.After(3 * time.Second):
 				if a.codeCaptureDest != nil {
@@ -373,8 +357,6 @@ func (a *AnotateTest) stopCode(capture bool, comment ...string) {
 			}
 		}
 	}
-
-	fmt.Fprintf(os.Stderr, "DONE ?\n")
 }
 
 func (a *AnotateTest) startCode(capture bool, name string, comment ...string) {
@@ -384,10 +366,9 @@ func (a *AnotateTest) startCode(capture bool, name string, comment ...string) {
 	)
 
 	if capture {
-		fmt.Fprintf(os.Stderr, "starting capture\n")
 		a.codeCaptureSrc, a.codeCaptureDest, err = os.Pipe()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "PIPE panic %v\n", err)
+			panic(err)
 		}
 
 		print()
@@ -464,10 +445,3 @@ func (a *AnotateTest) Br() *AnotateTest {
 
 	return a
 }
-
-// - suite.Chapter(name, title....)
-// - suite.Subchapter(name, title ...)
-// - suite.D2(name, description)
-// - suite.Picture(name, tittle)
-// - suite.Link()
-// - suite.RestClient.... Anotate

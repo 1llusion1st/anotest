@@ -26,7 +26,7 @@ func TestAnnotestTest(t *testing.T) {
 
 	at.Story("showcase", func(t *testing.T) {
 
-		at.Chapter("image", "image demo", func(t *testing.T) {
+		at.Chapter("diagram show case", "image demo", func(t *testing.T) {
 			at.PutD2Svg(`
 				shape: sequence_diagram
 
@@ -48,8 +48,6 @@ func TestAnnotestTest(t *testing.T) {
 			}
 
 			at.StopCapture()
-
-			t.Fail()
 		})
 
 		at.Chapter("chapter1", "simple title for chapter1", func(t *testing.T) {
