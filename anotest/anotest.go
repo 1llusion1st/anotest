@@ -1,8 +1,10 @@
 package anotest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
@@ -82,9 +84,14 @@ type AnotateTest struct {
 	fails   int
 	history []string
 
-	codeFile    string
-	codeStart   int
-	codeComment string
+	codeFile        string
+	codeStart       int
+	codeName        string
+	codeComment     string
+	codeCaptureDest *os.File
+	codeCaptureSrc  *os.File
+	codeCapturePrev *os.File
+	codeCaptureChan chan string
 }
 
 func (a *AnotateTest) Path() string {
@@ -150,10 +157,6 @@ func (a *AnotateTest) PutD2Svg(d2DiadSource string) *AnotateTest {
 		panic(err)
 	}
 
-	if err := os.WriteFile("/tmp/debug/1.test.svg", []byte(svg), 0644); err != nil {
-		panic(err)
-	}
-
 	convertCmd := exec.Command("convert", "-density", "50", "/dev/stdin", "png:-")
 	convertCmd.Stdin = strings.NewReader(svg)
 	convertOutput, err := convertCmd.Output()
@@ -163,23 +166,11 @@ func (a *AnotateTest) PutD2Svg(d2DiadSource string) *AnotateTest {
 		return a
 	}
 
-	if err := os.WriteFile("/tmp/debug/2.converted.png", convertOutput, 0644); err != nil {
-		panic(err)
-	}
-
 	// convertOutput, _ = os.ReadFile("/tmp/test2.png")
 
 	escaped := url.PathEscape(string(convertOutput))
 
-	if err := os.WriteFile("/tmp/debug/3.quoted.url", []byte(escaped), 0644); err != nil {
-		panic(err)
-	}
-
 	imageURL := "![image](data:image/png;data," + escaped + ")"
-
-	if err := os.WriteFile("/tmp/debug/4.result.image", []byte(imageURL), 0600); err != nil {
-		panic(err)
-	}
 
 	fmt.Fprintf(a.f, "\n\n%s\n\n", imageURL)
 
@@ -254,18 +245,43 @@ func (a *AnotateTest) GetD2Svg(d2DiadSource string) (string, error) {
 
 }
 
+func (a *AnotateTest) StartCode(name string, comment ...string) {
+	a.startCode(false, name, comment...)
+}
+
 func (a *AnotateTest) StopCode(comment ...string) {
+	a.stopCode(false, comment...)
+}
+
+func (a *AnotateTest) StartCapture(name string, comment ...string) {
+	a.startCode(true, name, comment...)
+}
+
+func (a *AnotateTest) StopCapture(comment ...string) {
+	a.stopCode(true, comment...)
+}
+
+func (a *AnotateTest) stopCode(capture bool, comment ...string) {
 	text := a.codeComment
 	if len(comment) > 0 {
 		text = comment[0]
 	}
 
-	fmt.Fprintf(a.f, "%s\n\n```go\n", text)
-
-	_, _, codeStop, ok := runtime.Caller(1)
+	_, fName, codeStop, ok := runtime.Caller(2)
 	if !ok {
+		fmt.Fprintf(os.Stderr, "code: %s: %d", fName, codeStop)
+
 		return
 	}
+
+	cwd, _ := os.Getwd()
+	fNameShort := strings.Replace(fName, strings.ReplaceAll(cwd+"/", "//", "/"), "", 1)
+
+	link := fmt.Sprintf("[[%s]]: [%d - %d]", fNameShort, a.codeStart, codeStop)
+
+	fmt.Fprintf(a.f, "### %s\n(%s) %s\n\n```go\n", a.codeName, link, text)
+
+	fmt.Fprintf(os.Stderr, "File: %s\n", fName)
 
 	code, err := os.ReadFile(a.codeFile)
 	if err != nil {
@@ -273,6 +289,8 @@ func (a *AnotateTest) StopCode(comment ...string) {
 	}
 
 	codeLines := strings.Split(string(code), "\n")
+
+	fmt.Fprintf(os.Stderr, "start: %d, stop: %d\n", a.codeStart, codeStop)
 
 	codeLines = codeLines[a.codeStart : codeStop-1]
 
@@ -286,7 +304,7 @@ func (a *AnotateTest) StopCode(comment ...string) {
 	minSpace := maxLine
 	spaceLen := 0
 
-	fmt.Printf("\nminSpace: %d\n", minSpace)
+	fmt.Fprintf(os.Stderr, "\nminSpace: %d\n", minSpace)
 
 	skip := make(map[int]struct{}, len(codeLines))
 
@@ -303,17 +321,17 @@ func (a *AnotateTest) StopCode(comment ...string) {
 		}
 
 		spaceLen = l - lNew
-		fmt.Printf("space len: %d == (%d - %d = %d)\n", spaceLen, l, lNew, l-lNew)
+		fmt.Fprintf(os.Stderr, "space len: %d == (%d - %d = %d)\n", spaceLen, l, lNew, l-lNew)
 
 		if spaceLen < minSpace {
-			fmt.Printf("spaceL: %d minSpace: %d\n", spaceLen, minSpace)
+			fmt.Fprintf(os.Stderr, "spaceL: %d minSpace: %d\n", spaceLen, minSpace)
 			minSpace = spaceLen
 		}
 
-		fmt.Printf("line: '%s' lnew: '%s' l: %d lNew: %d space: %d minSpace: %d\n", line, lineNew, l, lNew, spaceLen, minSpace)
+		fmt.Fprintf(os.Stderr, "line: '%s' lnew: '%s' l: %d lNew: %d space: %d minSpace: %d\n", line, lineNew, l, lNew, spaceLen, minSpace)
 	}
 
-	fmt.Printf("min space: %d\n", minSpace)
+	fmt.Fprintf(os.Stderr, "min space: %d\n", minSpace)
 
 	for i := range codeLines {
 		if _, ok := skip[i]; ok {
@@ -328,16 +346,71 @@ func (a *AnotateTest) StopCode(comment ...string) {
 	codeToPrint := strings.Join(codeLines, "\n")
 
 	fmt.Fprintf(a.f, "%s\n```\n\n", codeToPrint)
+
+	if a.codeCaptureDest != nil && a.codeCaptureSrc != nil && capture {
+		fmt.Fprintf(a.f, "stdout:\n\n```text\n")
+
+		for i := 0; i < 2; i++ {
+			fmt.Fprintf(os.Stderr, "checking new lines\n")
+
+			select {
+			case line := <-a.codeCaptureChan:
+				fmt.Fprintf(os.Stderr, "New line ? '%s'\n", line)
+
+				fmt.Fprintf(a.f, "%s\n```\n\n", line)
+			case <-time.After(3 * time.Second):
+				if a.codeCaptureDest != nil {
+					a.codeCaptureDest.Close()
+
+					os.Stdout = a.codeCapturePrev
+
+					a.codeCaptureDest = nil
+				} else {
+
+				}
+
+				break
+			}
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "DONE ?\n")
 }
 
-func (a *AnotateTest) StartCode(comment ...string) {
-	var ok bool
+func (a *AnotateTest) startCode(capture bool, name string, comment ...string) {
+	var (
+		ok  bool
+		err error
+	)
 
+	if capture {
+		fmt.Fprintf(os.Stderr, "starting capture\n")
+		a.codeCaptureSrc, a.codeCaptureDest, err = os.Pipe()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "PIPE panic %v\n", err)
+		}
+
+		print()
+
+		a.codeCaptureChan = make(chan string, 1000)
+
+		go func() {
+			var buf bytes.Buffer
+			io.Copy(&buf, a.codeCaptureSrc)
+			a.codeCaptureChan <- buf.String()
+		}()
+
+		a.codeCapturePrev = os.Stdout
+
+		os.Stdout = a.codeCaptureDest
+	}
+
+	a.codeName = name
 	if len(comment) > 0 {
 		a.codeComment = comment[0]
 	}
 
-	_, a.codeFile, a.codeStart, ok = runtime.Caller(1)
+	_, a.codeFile, a.codeStart, ok = runtime.Caller(2)
 	if !ok {
 		return
 	}

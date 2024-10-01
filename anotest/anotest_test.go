@@ -27,14 +27,36 @@ func TestAnnotestTest(t *testing.T) {
 	at.Story("showcase", func(t *testing.T) {
 
 		at.Chapter("image", "image demo", func(t *testing.T) {
-			at.PutD2Svg("alice -> bob -> molly")
+			at.PutD2Svg(`
+				shape: sequence_diagram
+
+				a -> b: hello
+				b -> c: should reply ?
+				c -> b: I think yes
+				b -> a: hi there!
+			`)
+
+			at.StartCapture("capture1", "some code sample")
+
+			fmt.Printf("hello world!\n")
+
+			for i := 0; i < 10; i++ {
+
+				go func(i int) {
+					fmt.Printf("line %d\n", i)
+				}(i)
+			}
+
+			at.StopCapture()
+
+			t.Fail()
 		})
 
 		at.Chapter("chapter1", "simple title for chapter1", func(t *testing.T) {
 
 			require.Equal(t, 1, 1)
 
-			at.Comment("here are some subchapters ...")
+			at.Comment("here are some subchapters ..." + at.ML("go to listing 1", "capture1"))
 
 			at.Chapter("sub1", "some subchupter 1.1", func(t *testing.T) {
 				require.Equal(t, 1, 1)
@@ -71,17 +93,6 @@ func TestAnnotestTest(t *testing.T) {
 		at.Chapter("another", "some chapter 2", func(t *testing.T) {
 			require.Equal(t, 2, 2)
 
-			at.StartCode("some code sample")
-
-			fmt.Printf("hello world!")
-
-			for i := 0; i < 100; i++ {
-				go func() {
-					fmt.Printf("0")
-				}()
-			}
-
-			at.StopCode()
 		})
 	})
 }
