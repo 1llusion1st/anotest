@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flat Blogging System</title>
+    <style>
+        /* Inline CSS styles */
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1024px; /* Set max width for the content container */
+            margin: 0 auto; /* Center align the content */
+            padding: 5 20px; /* Add some padding to the sides of the content container */
+        }
+        .collapsed {
+            display: none;
+        }
+        .container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px; /* Adjust margin top */
+        }
+        header {
+            background-color: #f8f9fa;
+            padding: 10px 0;
+            text-align: center;
+        }
+        .brand {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 5;
+        }
+        .social-links a {
+            margin: 5 10px;
+            text-decoration: none;
+            color: #007bff;
+        }
+        .left-column {
+            flex: 5 0 20%;
+        }
+        .central-column {
+            flex: 5 0 55%; /* Adjusted width */
+            margin: 5 auto; /* Center align the central column */
+        }
+        .right-column {
+            flex: 0 0 25%;  /* Adjusted width */
+        }
+        .post-list li {
+            list-style: none;
+            margin-bottom: 20px;
+            border: 0px solid #ccc;
+            padding: 10px;
+        }
+        .pagination {
+            text-align: right; /* Align pagination links to the right */
+        }
+        .pagination a {
+            margin-left: 10px; /* Add some spacing between pagination links */
+        }
+        .tags ul, .by-date-list ul {
+            padding: 5;
+            list-style: none;
+        }
+        /* CSS for tags displayed as cards */
+        .tags-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .tag-card {
+            padding: 5px 10px;
+            background-color: #f2f2f2;
+            border-radius: 3px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            font-size: 12px;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> <!--Include jQuery from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        // jQuery for pagination
+        $(document).ready(function(){
+            var items = $(".post-list ul li");
+            var numItems = items.length;
+            var perPage = 1;
+
+            class Pagination {
+                constructor(items, perPage) {
+                    this.items = items;
+                    this.numItems = this.items.length;
+                    this.perPage = perPage;
+                    this.currentPage = 1;
+                    this.showPage(1);
+                }
+
+                showPage(page) {
+                    this.items.hide();
+                    this.items.slice((page - 1) * this.perPage, page * this.perPage).show();
+                }
+
+                nextPage() {
+                    if (this.currentPage < this.numItems / this.perPage) {
+                        this.currentPage++;
+                        this.showPage(this.currentPage);
+                    }
+                }
+
+                prevPage() {
+                    if (this.currentPage > 1) {
+                        this.currentPage--;
+                        this.showPage(this.currentPage);
+                    }
+                }
+            }
+
+            /*
+            var items = $(".post-list ul li");
+            var perPage = 1;
+
+            var pagination = new Pagination(items, perPage);
+
+            $(".pagination").on('click', '.prev', function(e) {
+                e.preventDefault();
+                pagination.prevPage();
+            });
+
+            $(".pagination").on('click', '.next', function(e) {
+                e.preventDefault();
+                pagination.nextPage();
+            });
+            */
+
+            class Post {
+              constructor(item) {
+                this.title = item.title;
+                this.slug = item.slug;
+
+                this.summary = item.summary;
+
+                this.date = item.date;
+                this.author = item.author;
+                this.tags = item.tags;
+              }
+            }
+
+            class UI {
+              constructor(list_name, post_name) {
+                this.list_element_name = list_name;
+                this.content_element_name = post_name;
+              }
+
+              show_list() {
+                document.getElementsByClassName(this.list_element_name)[0].style.display = "";
+                document.getElementsByClassName(this.content_element_name)[0].style.display = "none";
+                
+              }
+
+              show_content() {
+                document.getElementsByClassName(this.list_element_name)[0].style.display = "none";
+                document.getElementsByClassName(this.content_element_name)[0].style.display = "";
+              }
+
+              set_post(post) {
+                console.log("post to show", post);
+                this.show_content();
+
+                console.log("slug to show", post.slug);
+
+                var content = window.state.content[post.slug];
+                if (content !== undefined) {
+                  content = marked.parse(content)
+
+                  content = `${post.author}<br>${post.date}<br>${post.tags}<br><br>${content}`;
+
+                  document.getElementsByClassName(this.content_element_name)[0].innerHTML = content;
+                }
+              }
+
+              navigate_post(slug) {
+                let post = window.state.posts[slug];
+                this.set_post(post);
+              }
+
+              navigate_page(num) {
+                console.log("navigating to page", num);
+
+                let s = window.state;
+                s.page.current = num;
+                
+                let l = s.posts_sorted.length;
+
+                let offset = (s.page.current - 1) * s.page.size;
+
+                let posts_list = s.posts_sorted.slice(offset, offset + s.page.size);
+
+                this.renderPostsList(posts_list);
+
+                this.show_list();
+
+                this.show_pagination();
+              }
+
+              renderPostsList(posts) {
+                console.log("posts to render: ", posts);
+                let cnt = document.getElementsByClassName("post-list")[0];
+                cnt.innerHTML = "";
+
+                $.each(posts, function(i, post) {
+                  post = window.state.posts[post];
+
+                  console.log(`adding ${post} to list`, post);
+
+                  cnt.innerHTML += `
+                    <li>
+                      <h2>${post.title}</h2>
+                      <p>${post.date}</p>
+                      <p>${post.author}</p>
+                      <p>${post.tags}</p>
+                      <p>${post.summary}
+                        <a href="#" onclick="window.ui.navigate_post('${post.slug}')">...more...</a>
+                    </li>
+                  `;
+                });
+              }
+
+              make_generation_numbers({arr, pageSize, pageNumber}) {
+                if (arr.length <= 3) {
+                  return arr;
+                }
+
+                let pages = arr.length / pageSize + arr.length % pageSize;
+
+                if (pageNumber >= pages) {
+                  var i;
+                  var res = new Array();
+                  for (i = pages; i > 0; i--) {
+                      res.push(i);
+                  }
+
+                  res.reverse();
+
+                  return res;
+                }
+
+                if (pageNumber <= 1) {
+                  var i;
+                  var res = new Array();
+                  for (i = 1; i <= pages; i++) {
+                      res.push(i);
+                  }
+
+                  return res;
+                }
+
+                return [pageNum - 1, pageNum, pageNum + 1];
+
+                var start = (pageNumber - 1) * pageSize;
+                let stop = pageNumber * pageSize;
+                if (start > 1) {
+                  start = start - 1;
+                }
+                var result = arr.slice(start, stop);
+                return result;
+              }
+
+              show_pagination() {
+                let s = window.state;
+
+                let l = s.posts_sorted.length;
+
+                var pages = l / s.page.size + l % s.page.size;
+
+                var i;
+                var pgs = new Array();
+                for (i = 1; i <= pages; i ++) {
+                  pgs.push(i);
+                }
+
+                pgs = this.make_generation_numbers({arr: pgs, pageSize: s.page.size, pageNumber: s.page.current});
+
+
+                console.log("page numbers: ", pgs);
+
+
+                var pages = "";
+                $.each(pgs, function(i, num) {
+                  pages = pages + `<a href="#" onclick="window.ui.navigate_page(${num})">${num}</a>\n`
+                });
+
+                $.each(document.getElementsByClassName("pagination-container"), function(i, cnt) {
+                  cnt.innerHTML = pages;
+                });
+
+              }
+
+            }
+
+            window.ui = new UI("tab-post-list", "post-content");
+
+            window.state = {
+              page: {
+                current: 1,
+                size: 2,
+              },
+
+              posts: {},
+              posts_sorted: [
+                "2024-october-some-post",
+                "2024-october-another-post",
+                "2024-september-post-3",
+                "2024-september-post-2",
+                "2024-september-post-1",
+              ],
+              content: {},
+
+              fact: "some interest fact about Mars - it's our future",
+              tags: ["blockchain", "AI", "winapi"]
+            };
+
+
+            window.state.posts["2024-october-some-post"] = new Post({
+                  title: "some post",
+                  slug: "2024-october-some-post",
+
+                  summary: "short summary for this article",
+
+                  date: "2024-10-01",
+                  author: "@andrew",
+                  tags: ["intro"]
+                });
+
+            window.state.posts["2024-october-another-post"] = new Post({
+                  title: "another post",
+                  slug: "2024-october-another-post",
+
+                  summary: "short summary for this another article",
+
+                  date: "2024-10-02",
+                  author: "@andrew",
+                  tags:  ["intro", "others"]
+                });
+
+            window.state.posts[ "2024-september-post-3"] = new Post({
+                  title: "post 3",
+                  slug: "2024-september-post-3",
+
+                  summary: "short summary for this another article",
+
+                  date: "2024-09-27",
+                  author: "@andrew",
+                  tags:  ["intro", "AI"]
+                });
+
+            window.state.posts["2024-september-post-2"] = new Post({
+                  title: "post 2",
+                  slug: "2024-september-post-2",
+
+                  summary: "short summary for this another article",
+
+                  date: "2024-09-22",
+                  author: "@andrew",
+                  tags:  ["blockchain"]
+                });
+
+            window.state.posts["2024-september-post-1"] = new Post({
+                  title: "post 1",
+                  slug: "2024-september-post-1",
+
+                  summary: "short summary for this another article",
+
+                  date: "2024-09-04",
+                  author: "@andrew",
+                  tags:  ["winapi"]
+                });
+
+            window.state.content["2024-october-some-post"] = "# title 1\n## chapter1\ncontent ....\n## chapter 2\n\tcontent ... content\n\n# sumary\ncontent ... ";
+          let post_to_display = window.state.posts["2024-october-some-post"];
+            console.log("Post to display: ", post_to_display);
+
+            window.ui.set_post(post_to_display);
+
+
+            window.ui.navigate_page(1);
+
+            
+        });
+
+    </script>
+</head>
+<body>
+    <header>
+        <div class="social-links ">
+            {{ .brand_phrase }}
+
+            <a href="{{ .links_github }}">GitHub</a>
+            <a href="{{ .links_twitter }}">Twitter</a>
+            <a href="{{ .links_discord }}">Discord</a>
+            <a href="{{ .links_slate }}">Slate</a>
+            <a href="mailto:{{ .links_email }}">Email</a>
+        </div>
+    </header>
+    <div class="container">
+        <div class="left-column">
+        <p>{{ .fact }}</p>
+        </div>
+        <div class="central-column">
+            <!-- posts list -->
+            <div class="tab-post-list">
+                <div class="pagination">
+                  <div class="pagination pagination-container">
+                      <a href="#" class="prev" onclick="handler_go_prev()">Previous</a>
+                      <a href="#" class="next" onclick="handler_go_next()">Next</a>
+                  </div>
+                </div>
+                <ul class="post-list">
+                    <li>
+                        <h2>First Post Title</h2>
+                        <p>April 1, 2022</p>
+                        <p>Tags: Science, Technology</p>
+                        <p>This is a short summary of the first post.</p>
+                    </li>
+                    <li>
+                        <h2>Second Post Title</h2>
+                        <p>March 26, 2022</p>
+                        <p>Tags: Nature, Travel</p>
+                        <p>This is a short summary of the second post.</p>
+                    </li>
+                    <li>
+                        <h2>Third Post Title</h2>
+                        <p>March 26, 2022</p>
+                        <p>Tags: Nature, Travel</p>
+                        <p>This is a short summary of the second post.</p>
+                    </li>
+                    <li>
+                        <h2>Fourth Post Title</h2>
+                        <p>March 26, 2022</p>
+                        <p>Tags: Nature, Travel</p>
+                        <p>This is a short summary of the second post.</p>
+                    </li>
+                    <li>
+                        <h2>Fifth Post Title</h2>
+                        <p>March 26, 2022</p>
+                        <p>Tags: Nature, Travel</p>
+                        <p>This is a short summary of the second post.</p>
+                    </li>
+                </ul>
+                <div class="pagination">
+                  <div class="pagination pagination-container">
+                      <a href="#" class="prev" onclick="handler_go_prev()">Previous</a>
+                      <a href="#" class="next" onclick="handler_go_next()">Next</a>
+                  </div>
+                </div>
+            </div>
+            <!-- posts content -->
+            <div class="tab-post">
+                <div class="post-content" style="display:none">
+                    <h2>First Post Title</h2>
+                    <p>April 1, 2022</p>
+                    <p>Author: John Doe</p>
+                    <p>Category: Science</p>
+                    <p>This is the full content of the first post.</p>
+                </div>
+            </div>
+        </div>
+        <div class="right-column">
+            <div class="tags">
+                <h3>Tags</h3>
+                <div class="tags-list">
+                    <li class="tag-card log-tag">AI</li>
+                    <li class="tag-card blog-tag">blockchain</li>
+                    <li class="tag-card blog-tag">winapi</li>
+                </div>
+            </div>
+            <div class="by-date-list">
+                <h3>By Date</h3>
+                <ul>
+                    <div class="tags-list">
+
+                            <li class="tag-card blog-year-tag">2024(14)</li>
+                            <li class="tag-card blog-year-tag">2023(1)</li>
+                            <li class="tag-card blog-year-tag">2022(3)</li>
+                            <li class="tag-card">October(4)</li>
+                            <li class="tag-card">September(4)</li>
+                    </div>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
