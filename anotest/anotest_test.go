@@ -27,13 +27,17 @@ func TestAnnotestTest(t *testing.T) {
 	at.Story("showcase", func(t *testing.T) {
 
 		at.Chapter("diagram show case", "image demo", func(t *testing.T) {
+
 			at.PutD2Svg(`
 				shape: sequence_diagram
 
 				a -> b: hello
-				b -> c: should reply ?
+				b -> c: should reply ? I hope
 				c -> b: I think yes
 				b -> a: hi there!
+
+				d -> a: hello from base64 With PADDING
+
 			`)
 
 			at.StartCapture("capture1", "some code sample")

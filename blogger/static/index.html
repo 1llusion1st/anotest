@@ -7,6 +7,7 @@
     <style>
         /* Inline CSS styles */
         body {
+            background: #f7f7f7;
             font-family: Arial, sans-serif;
             max-width: 1024px; /* Set max width for the content container */
             margin: 0 auto; /* Center align the content */
@@ -305,11 +306,11 @@
 
               posts: {},
               posts_sorted: [
-                "2024-october-some-post",
-                "2024-october-another-post",
-                "2024-september-post-3",
-                "2024-september-post-2",
-                "2024-september-post-1",
+
+              {{range .slugs}}
+                "{{ . }}",
+              {{end}}
+
               ],
               content: {},
 
@@ -318,63 +319,25 @@
             };
 
 
-            window.state.posts["2024-october-some-post"] = new Post({
-                  title: "some post",
-                  slug: "2024-october-some-post",
+            {{range .posts}}
+            window.state.posts["{{ .Slug }}"] = new Post({
+                  title: "{{ .Title }}",
+                  slug: "{{ .Slug }}",
 
-                  summary: "short summary for this article",
+                  summary: "{{ .Summary }}",
 
-                  date: "2024-10-01",
-                  author: "@andrew",
-                  tags: ["intro"]
+                  date: "{{ .Date }}",
+                  author: "{{ .Author.Name }}",
+                  tags: [
+                  ]
                 });
+            {{end}}
 
-            window.state.posts["2024-october-another-post"] = new Post({
-                  title: "another post",
-                  slug: "2024-october-another-post",
+            {{range .posts}}
+            window.state.content["{{ .Slug }}"] = atob("{{ .GetContent }}");
+            {{end}}
 
-                  summary: "short summary for this another article",
-
-                  date: "2024-10-02",
-                  author: "@andrew",
-                  tags:  ["intro", "others"]
-                });
-
-            window.state.posts[ "2024-september-post-3"] = new Post({
-                  title: "post 3",
-                  slug: "2024-september-post-3",
-
-                  summary: "short summary for this another article",
-
-                  date: "2024-09-27",
-                  author: "@andrew",
-                  tags:  ["intro", "AI"]
-                });
-
-            window.state.posts["2024-september-post-2"] = new Post({
-                  title: "post 2",
-                  slug: "2024-september-post-2",
-
-                  summary: "short summary for this another article",
-
-                  date: "2024-09-22",
-                  author: "@andrew",
-                  tags:  ["blockchain"]
-                });
-
-            window.state.posts["2024-september-post-1"] = new Post({
-                  title: "post 1",
-                  slug: "2024-september-post-1",
-
-                  summary: "short summary for this another article",
-
-                  date: "2024-09-04",
-                  author: "@andrew",
-                  tags:  ["winapi"]
-                });
-
-            window.state.content["2024-october-some-post"] = "# title 1\n## chapter1\ncontent ....\n## chapter 2\n\tcontent ... content\n\n# sumary\ncontent ... ";
-          let post_to_display = window.state.posts["2024-october-some-post"];
+            let post_to_display = window.state.posts["{{ .CurrentSlug }}"];
             console.log("Post to display: ", post_to_display);
 
             window.ui.set_post(post_to_display);
@@ -453,6 +416,7 @@
             </div>
             <!-- posts content -->
             <div class="tab-post">
+                <a href="#" onclick="window.ui.show_list()">back to list</a><br/>
                 <div class="post-content" style="display:none">
                     <h2>First Post Title</h2>
                     <p>April 1, 2022</p>
@@ -466,9 +430,9 @@
             <div class="tags">
                 <h3>Tags</h3>
                 <div class="tags-list">
-                    <li class="tag-card log-tag">AI</li>
-                    <li class="tag-card blog-tag">blockchain</li>
-                    <li class="tag-card blog-tag">winapi</li>
+                    {{range .tags}}
+                    <li class="tag-card log-tag">{{ . }}</li>
+                    {{end}}
                 </div>
             </div>
             <div class="by-date-list">

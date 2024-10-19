@@ -3,6 +3,7 @@ package anotest
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,6 +29,15 @@ import (
 
 type AnotateTestOpts struct {
 	showDuration bool
+
+	dumpHeader bool
+	header     struct {
+		Author  string
+		Date    string
+		Title   string
+		Summary string
+		Tags    []string
+	}
 }
 
 type AnotateOpt func(o *AnotateTestOpts) error
@@ -35,6 +45,56 @@ type AnotateOpt func(o *AnotateTestOpts) error
 func WithDuration() AnotateOpt {
 	return func(o *AnotateTestOpts) error {
 		o.showDuration = true
+
+		return nil
+	}
+}
+
+func WithAuthor(author string) AnotateOpt {
+	return func(o *AnotateTestOpts) error {
+		o.dumpHeader = true
+
+		o.header.Author = author
+
+		return nil
+	}
+}
+
+func WithTitle(title string) AnotateOpt {
+	return func(o *AnotateTestOpts) error {
+		o.dumpHeader = true
+
+		o.header.Title = title
+
+		return nil
+	}
+}
+
+func WithTags(tags ...string) AnotateOpt {
+	return func(o *AnotateTestOpts) error {
+		o.dumpHeader = true
+
+		o.header.Tags = tags
+
+		return nil
+	}
+}
+
+func WithDate() AnotateOpt {
+	return func(o *AnotateTestOpts) error {
+		o.dumpHeader = true
+
+		o.header.Date = time.Now().Format("2006-01-02T15:04:05Z07:00")
+
+		return nil
+	}
+}
+
+func WithSummary(summary string) AnotateOpt {
+	return func(o *AnotateTestOpts) error {
+		o.dumpHeader = true
+
+		o.header.Summary = summary
 
 		return nil
 	}
@@ -48,6 +108,11 @@ func NewAnotateTest(t *testing.T, fName string, opts ...AnotateOpt) (*AnotateTes
 		}
 
 		fName = path.Join(u, fName[2:])
+	}
+
+	if fName == "" {
+		_, fName, _, _ = runtime.Caller(1)
+		fName = strings.ReplaceAll(fName, "_test.go", ".gen.md")
 	}
 
 	f, err := os.OpenFile(fName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
@@ -98,7 +163,31 @@ func (a *AnotateTest) Path() string {
 	return strings.Join(a.path, " > ")
 }
 
+func (a *AnotateTest) printHeader() {
+	fmt.Fprintf(a.f, "+++\n")
+
+	fmt.Fprintf(a.f, "title = \"%s\"\n", a.options.header.Title)
+	fmt.Fprintf(a.f, "summary = \"%s\"\n", a.options.header.Summary)
+	fmt.Fprintf(a.f, "date = \"%s\"\n", a.options.header.Date)
+
+	tags := make([]string, 0, len(a.options.header.Tags))
+	for _, tag := range a.options.header.Tags {
+		tags = append(tags, "\""+tag+"\"")
+	}
+
+	fmt.Fprintf(a.f, "tags = [%s]\n", strings.Join(tags, ","))
+	fmt.Fprintf(a.f, "\n[author]\n")
+
+	fmt.Fprintf(a.f, "name = \"%s\"\n", a.options.header.Author)
+
+	fmt.Fprintf(a.f, "+++\n")
+}
+
 func (a *AnotateTest) Story(title string, ffunc AnotatedTestFunc) {
+	if a.options.dumpHeader {
+		a.printHeader()
+	}
+
 	fmt.Fprintf(a.f, "# %s\n\n\n", title)
 
 	start := time.Now()
@@ -117,10 +206,14 @@ func (a *AnotateTest) Story(title string, ffunc AnotatedTestFunc) {
 
 	d := decimal.NewFromFloat
 
-	summaryMsg := fmt.Sprintf(
-		"# Summary(total: %d success: %d(%s %%) failed: %d(%s %%)) - %s",
-		t, s, d(sp).Round(1).String(), f, d(fp).Round(1).String(), end.Sub(start).String(),
-	)
+	var summaryMsg string
+
+	if t > 0 {
+		summaryMsg = fmt.Sprintf(
+			"# Summary(total: %d success: %d(%s %%) failed: %d(%s %%)) - %s",
+			t, s, d(sp).Round(1).String(), f, d(fp).Round(1).String(), end.Sub(start).String(),
+		)
+	}
 
 	fmt.Fprintf(a.f, "%s\n\n", summaryMsg)
 
@@ -168,9 +261,21 @@ func (a *AnotateTest) PutD2Svg(d2DiadSource string) *AnotateTest {
 
 	// convertOutput, _ = os.ReadFile("/tmp/test2.png")
 
-	escaped := url.PathEscape(string(convertOutput))
+	var (
+		raw      = false
+		imageURL string
+	)
 
-	imageURL := "![image](data:image/png;data," + escaped + ")"
+	if raw {
+		escaped := url.PathEscape(string(convertOutput))
+
+		imageURL = "![image](data:image/png;data," + escaped + ")"
+	} else {
+		// b64 := base64.StdEncoding.EncodeToString(convertOutput)
+		b64 := base64.StdEncoding.WithPadding(base64.StdPadding).EncodeToString(convertOutput)
+
+		imageURL = "![image](data:image/png;base64," + b64 + ")"
+	}
 
 	fmt.Fprintf(a.f, "\n\n%s\n\n", imageURL)
 
@@ -253,6 +358,12 @@ func (a *AnotateTest) StopCode(comment ...string) {
 	a.stopCode(false, comment...)
 }
 
+func (a *AnotateTest) TLogf(t *testing.T, format string, args ...any) {
+	t.Logf(format, args...)
+
+	fmt.Fprintf(os.Stdout, "%s\n\n", fmt.Sprintf(format, args...))
+}
+
 func (a *AnotateTest) StartCapture(name string, comment ...string) {
 	a.startCode(true, name, comment...)
 }
@@ -290,48 +401,7 @@ func (a *AnotateTest) stopCode(capture bool, comment ...string) {
 
 	codeLines = codeLines[a.codeStart : codeStop-1]
 
-	maxLine := 0
-	for _, line := range codeLines {
-		if len(line) > maxLine {
-			maxLine = len(line)
-		}
-	}
-
-	minSpace := maxLine
-	spaceLen := 0
-
-	skip := make(map[int]struct{}, len(codeLines))
-
-	for i, line := range codeLines {
-		l := len(line)
-
-		lineNew := strings.TrimLeft(line, "\t ")
-		lNew := len(lineNew)
-
-		if lNew == 0 {
-			skip[i] = struct{}{}
-
-			continue
-		}
-
-		spaceLen = l - lNew
-		if spaceLen < minSpace {
-			minSpace = spaceLen
-		}
-
-	}
-
-	for i := range codeLines {
-		if _, ok := skip[i]; ok {
-			codeLines[i] = ""
-
-			continue
-		}
-
-		codeLines[i] = codeLines[i][minSpace:]
-	}
-
-	codeToPrint := strings.Join(codeLines, "\n")
+	codeToPrint := a.TrimLeftStacesMultiline(strings.Join(codeLines, "\n"))
 
 	fmt.Fprintf(a.f, "%s\n```\n\n", codeToPrint)
 
@@ -435,9 +505,66 @@ func (a *AnotateTest) Chapter(name, title string, ffunc AnotatedTestFunc) {
 }
 
 func (a *AnotateTest) Comment(comment string) *AnotateTest {
+	if a.IsMultiline(comment) {
+		comment = a.TrimLeftStacesMultiline(comment)
+	}
+
 	fmt.Fprintf(a.f, "%s\n\n", comment)
 
 	return a
+}
+
+func (a *AnotateTest) IsMultiline(s string) bool {
+	return len(strings.Split(s, "\n")) > 1
+}
+
+func (a *AnotateTest) TrimLeftStacesMultiline(s string) string {
+	codeLines := strings.Split(s, "\n")
+
+	maxLine := 0
+	for _, line := range codeLines {
+		if len(line) > maxLine {
+			maxLine = len(line)
+		}
+	}
+
+	minSpace := maxLine
+	spaceLen := 0
+
+	skip := make(map[int]struct{}, len(codeLines))
+
+	for i, line := range codeLines {
+		l := len(line)
+
+		lineNew := strings.TrimLeft(line, "\t ")
+		lNew := len(lineNew)
+
+		if lNew == 0 {
+			skip[i] = struct{}{}
+
+			continue
+		}
+
+		spaceLen = l - lNew
+		if spaceLen < minSpace {
+			minSpace = spaceLen
+		}
+
+	}
+
+	for i := range codeLines {
+		if _, ok := skip[i]; ok {
+			codeLines[i] = ""
+
+			continue
+		}
+
+		codeLines[i] = codeLines[i][minSpace:]
+	}
+
+	codeToPrint := strings.Join(codeLines, "\n")
+
+	return codeToPrint
 }
 
 func (a *AnotateTest) Br() *AnotateTest {
